@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HI BFF — Friendship</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; background: #04020a; overflow: hidden; }
+  body { display: grid; place-items: center; font-family: system-ui, sans-serif; color: #f8dced; }
+  .stage { position: relative; height: 100dvh; width: min(100vw, 56.25dvh); aspect-ratio: 9 / 16; background: #000; overflow: hidden; }
+  @media (min-width: 800px) {
+    .stage { width: min(100vw, 1000px); height: 100dvh; aspect-ratio: auto; }
+    .intro h1 { font-size: clamp(56px, 7vw, 88px); }
+    .intro p { font-size: 14px; }
+  }
+  canvas { display: block; width: 100%; height: 100%; opacity:0; transition:opacity 1.1s ease; }
+  .stage.entered canvas { opacity:1; }
+  .intro { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:24px; text-align:center; cursor:pointer; color:#fff; background:#000; transition: opacity .65s ease; }
+  .intro h1 { margin:0; font-family: Georgia, serif; font-weight:500; font-size:clamp(44px, 12vw, 68px); letter-spacing:.04em; }
+  .intro p { margin:0; font-size:12px; letter-spacing:.24em; text-transform:uppercase; opacity:.72; }
+  .intro.leaving { opacity:0; pointer-events:none; }
+  .stage.entered .intro { display:none; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <canvas id="scene" width="360" height="640" aria-label="Friendship intro flower animation"></canvas>
+  <div class="intro" id="intro" role="button" tabindex="0" aria-label="Click to enter friendship website">
+    <h1>HI BFF</h1>
+    <p>click to enter</p>
+  </div>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('scene');
+  const ctx = canvas.getContext('2d');
+  const W = 360, H = 640, S = .5, gx = W/2, gy = H*.82, HS = 190;
+  const rand = (() => { let seed = 11; return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; })();
+  const range = (a,b) => a + (b-a)*rand();
+  const smooth = x => { x = Math.max(0, Math.min(1,x)); return x*x*(3-2*x); };
+  const lerp = (a,b,t) => a+(b-a)*t;
+  const midrib = (L,a0,curl,K=32) => {
+    const r=[], h=[];
+    let rr=0, hh=0; r.push(0); h.push(0);
+    for(let i=1;i<=K;i++){ const u=i/K, a=a0+curl*Math.pow(u,1.6); rr+=Math.sin(a)*L/K; hh+=Math.cos(a)*L/K; r.push(rr); h.push(hh); }
+    return {r,h};
+  };
+  const sample = (arr,u) => { const x=u*(arr.length-1), i=Math.floor(x), f=x-i; return lerp(arr[i], arr[Math.min(i+1,arr.length-1)],f); };
+  const dots = [];
+  // Petal point clouds
+  const petals=[];
+  for(let k=0;k<6;k++){
+    const outer=k%2===0, points=[];
+    for(let i=0;i<1250;i++){
+      const u=Math.pow(rand(),.85), v=range(-1,1), prof=Math.pow(Math.sin(Math.PI*Math.pow(u,.7)),.9);
+      let base=[sample([205,255,255,255],u),sample([40,95,150,195],u),sample([125,165,205,228],u)];
+      if(Math.abs(v)<.07 && u<.55) base=[235,225,150];
+      else if(rand()<.10 && u<.6 && Math.abs(v)<.75) base=[140,15,80];
+      const factor=.82+.35*rand();
+      points.push({u,v,prof,base:base.map(c=>c*factor)});
+    }
+    petals.push({phi:(k*60+8)*Math.PI/180,L:(outer?150:140),Wm:(outer?32:36),ac:outer?.10:.05,ao:outer?1.05:.82,curl:outer?.95:.75,points});
+  }
+  // Stem and leaf point clouds
+  const stem=[];
+  for(let i=0;i<1600;i++){
+    const s=rand(), dx=(range(-1,1)+range(-1,1))*1.6*(1-.5*s);
+    stem.push({s,dx,col:[lerp(40,120,s),lerp(150,215,s),lerp(95,120,s)].map(c=>c*(.8+.4*rand()))});
+  }
+  const leaves=[];
+  for(const [s0,L,side] of [[.10,95,1],[.24,87.5,-1],[.40,75,1],[.56,60,-1]]){
+    const points=[];
+    for(let i=0;i<430;i++){
+      const u=Math.pow(rand(),.9),v=range(-1,1),prof=Math.pow(Math.sin(Math.PI*Math.pow(u,.8)),.8);
+      let col=[lerp(40,140,u),lerp(160,235,u),lerp(100,140,u)];
+      if(Math.abs(v)<.08) col=[190,240,170];
+      col=col.map(c=>c*(.8+.4*rand()));
+      points.push({u,v,prof,col});
+    }
+    leaves.push({s0,L,side,points});
+  }
+  const soil=[];
+  for(let i=0;i<2300;i++){
+    const dx=range(-170,170), mound=(1-Math.pow(dx/170,2))*27;
+    soil.push({x:gx+dx,y:gy-mound*Math.sqrt(rand())+range(-1.5,1.5),c:[range(70,140),range(55,100),range(80,120)]});
+  }
+  const stars=[];
+  for(let i=0;i<230;i++) stars.push({x:rand()*W,y:rand()*H,r:range(1,2.5),ph:rand()*6.28,spd:range(1,4)});
+  const ringAngles=Array.from({length:500},()=>rand()*Math.PI*2);
+  const littleRings=Array.from({length:6},()=>Array.from({length:110},()=>rand()*Math.PI*2));
+  const floating=Array.from({length:90},()=>({off:rand(),ph:rand()*6.28,dr:range(-40,40),sp:range(.05,.12)}));
+  const stamens=Array.from({length:6},(_,k)=>({phi:(k*60+38)*Math.PI/180,points:Array.from({length:34},()=>({u:rand(),j:range(-1,1)})),an:Array.from({length:24},()=>({x:range(-1,1),y:range(-1,1)}))}));
+  const stemX=(s,t)=>gx+15*Math.sin(2.2*s)+5*Math.sin(.9*t)*s*s;
+  const stemY=s=>gy-s*HS;
+  let time=0, last=performance.now();
+  function dot(x,y,color,r=1){ if(x<0||x>=W||y<0||y>=H)return; ctx.fillStyle=`rgb(${Math.max(0,Math.min(255,color[0]))|0},${Math.max(0,Math.min(255,color[1]))|0},${Math.max(0,Math.min(255,color[2]))|0})`; ctx.fillRect(x,y,r,r); }
+  function render(t){
+    ctx.fillStyle='#04020a';ctx.fillRect(0,0,W,H);
+    // Soft atmospheric specks
+    for(const s of stars){const a=.35+.65*(Math.sin(t*s.spd+s.ph)>0?1:.3);dot(s.x,(s.y-t*s.spd*2+H*10)%H,[255*a,200*a,235*a],s.r);}
+    const g=smooth(t/4), e=smooth((t-5)/10), rev=smooth((t-4+.3)/1.6);
+    const hx=stemX(1,t),hy=stemY(1);
+    // Ground
+    for(const p of soil)dot(p.x,p.y,p.c,1);
+    for(const p of stem)if(p.s<=g)dot(stemX(p.s,t)+p.dx,stemY(p.s),p.col,1);
+    // Leaves
+    for(const lf of leaves){
+      const lg=Math.max(0,Math.min(1,(g-lf.s0)*2.5));if(lg<=.01)continue;
+      const {r,h}=midrib(lf.L*lg,.85,1.1);
+      for(const p of lf.points){
+        const rr=sample(r,p.u),hh=sample(h,p.u),wid=7.5*p.prof*lg;
+        const bx=stemX(lf.s0,t),by=stemY(lf.s0),sway=Math.sin(t*1.2+lf.s0*5)*.03;
+        dot(bx+lf.side*(rr+p.v*wid*.35)+sway*hh*lf.side,by-hh+p.v*wid,p.col,1);
+      }
+    }
+    // Halo rings
+    const ha=smooth((t-3.5)/4)*.9;
+    if(ha>.01){
+      const cx=hx,cy=hy-45,R=150,rot=t*.12;
+      for(const a0 of ringAngles)dot(cx+R*Math.cos(a0+rot),cy+R*Math.sin(a0+rot),[255*ha*.7,190*ha*.7,225*ha*.7],1);
+      littleRings.forEach((angles,k)=>{const ca=rot*1.3+k*Math.PI/3,ox=cx+R*Math.cos(ca),oy=cy+R*Math.sin(ca);for(const a0 of angles)dot(ox+R*.5*Math.cos(a0+rot),oy+R*.5*Math.sin(a0+rot),[255*ha*.45,170*ha*.45,215*ha*.45],1);});
+    }
+    // Blooming petals
+    if(rev>.01){
+      const psi=.25+t*.22, cp=Math.cos(psi),sp=Math.sin(psi),ct=Math.cos(.5),st=Math.sin(.5),swayT=Math.sin(t*.8)*.02;
+      for(const p of petals){
+        const Ls=p.L*(.45+.55*e)*(.35+.65*rev),{r,h}=midrib(Ls,p.ac+(p.ao-p.ac)*e,(.12+.88*e)*p.curl);
+        for(const q of p.points){
+          if(q.u>rev)continue;
+          const rr=sample(r,q.u),hh=sample(h,q.u),wid=p.Wm*(.55+.45*e)*q.prof*(.35+.65*rev),ph=p.phi;
+          const X=rr*Math.cos(ph)-q.v*wid*Math.sin(ph),Z=rr*Math.sin(ph)+q.v*wid*Math.cos(ph),Y=hh+q.v*q.v*wid*(.30*(1-e)-.25*e);
+          const Xp=X*cp+Z*sp,Zp=-X*sp+Z*cp,sy=Y*ct-Zp*st;
+          const shade=.55+.45*Math.max(0,Math.min(1,Zp/Ls*.8+.5));
+          const tint=Math.max(0,Math.min(1,q.u*1.3))*(1-e)*.6;
+          const color=q.base.map((c,i)=>(c*(1-tint)+[135,205,125][i]*tint)*shade);
+          dot(hx+Xp+swayT*sy,hy-sy,color,1.15);
+        }
+      }
+      if(e>.28){
+        const sr=smooth((e-.28)/.4);
+        for(const sd of stamens){
+          const Ls=107.5*(.4+.6*e)*sr,{r,h}=midrib(Ls,lerp(.15,.62,e),.55*e);
+          for(const q of sd.points){const rr=sample(r,q.u),hh=sample(h,q.u),X=rr*Math.cos(sd.phi),Z=rr*Math.sin(sd.phi),Xp=X*cp+Z*sp,Zp=-X*sp+Z*cp,sy=hh*ct-Zp*st;dot(hx+Xp,hy-sy,Zp+5>0?[245,235,200]:[245,235,200],1.4);}
+          const rr=r[r.length-1],hh=h[h.length-1],txp=rr*Math.cos(sd.phi)*cp+rr*Math.sin(sd.phi)*sp, tzp=-rr*Math.cos(sd.phi)*sp+rr*Math.sin(sd.phi)*cp;
+          for(const a of sd.an)dot(hx+txp+a.x*2.5,hy-(hh*ct-tzp*st)+a.y*1.7,[255,150,40],1.6);
+        }
+      }
+    }
+    // Drifting glowing pollen
+    if(e>.6){
+      const fa=smooth((e-.6)/.4);
+      for(const p of floating){
+        const q=(t*p.sp+p.off)%1,fx=hx+p.dr*q+Math.sin(q*7+p.ph)*12.5,fy=(hy-55)+q*(gy-hy+45),fade=(1-q)*fa;
+        dot(fx,fy,p.ph>3.1?[255*fade,190*fade,80*fade]:[255*fade,150*fade,205*fade],2);
+      }
+    }
+    // A subtle glow pass
+    ctx.globalAlpha=.13;ctx.globalCompositeOperation='lighter';
+    ctx.filter='blur(7px)';ctx.drawImage(canvas,0,0);ctx.filter='none';
+    ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+  }
+  function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;time+=dt;render(time);requestAnimationFrame(frame);}
+  const intro=document.getElementById('intro');
+  function enterSite(){intro.classList.add('leaving');document.querySelector('.stage').classList.add('entered');}
+  intro.addEventListener('click',enterSite);
+  intro.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();enterSite();}});
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
