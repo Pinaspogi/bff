@@ -35,7 +35,30 @@
 (() => {
   const canvas = document.getElementById('scene');
   const ctx = canvas.getContext('2d');
-  const W = 360, H = 640, S = .5, gx = W/2, gy = H*.82, HS = 190;
+  const BASE_WIDTH = 360, H = 640, HS = 190;
+  let W = BASE_WIDTH, gx = W/2, gy = H;
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.max(1, Math.round(rect.width * pixelRatio));
+    canvas.height = Math.max(1, Math.round(rect.height * pixelRatio));
+
+    if (window.matchMedia('(min-width: 800px)').matches) {
+      const scale = rect.height / H;
+      W = rect.width / scale;
+      gx = W / 2;
+      ctx.setTransform(pixelRatio * scale, 0, 0, pixelRatio * scale, 0, 0);
+    } else {
+      W = BASE_WIDTH;
+      gx = W / 2;
+      ctx.setTransform(
+        pixelRatio * rect.width / BASE_WIDTH, 0, 0,
+        pixelRatio * rect.height / H, 0, 0
+      );
+    }
+    gy = H;
+  }
+  resizeCanvas();
   const rand = (() => { let seed = 11; return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; })();
   const range = (a,b) => a + (b-a)*rand();
   const smooth = x => { x = Math.max(0, Math.min(1,x)); return x*x*(3-2*x); };
@@ -80,13 +103,22 @@
     }
     leaves.push({s0,L,side,points});
   }
-  const soil=[];
-  for(let i=0;i<2300;i++){
-    const dx=range(-170,170), mound=(1-Math.pow(dx/170,2))*27;
-    soil.push({x:gx+dx,y:gy-mound*Math.sqrt(rand())+range(-1.5,1.5),c:[range(70,140),range(55,100),range(80,120)]});
+  const soil=[], stars=[];
+  function rebuildScenery() {
+    soil.length=0;
+    const soilHalfWidth = W > BASE_WIDTH ? W / 2 : 170;
+    for(let i=0;i<2300;i++){
+      const dx=range(-soilHalfWidth,soilHalfWidth), mound=(1-Math.pow(dx/soilHalfWidth,2))*27;
+      soil.push({x:gx+dx,y:gy-mound*Math.sqrt(rand())+range(-1.5,1.5),c:[range(70,140),range(55,100),range(80,120)]});
+    }
+    stars.length=0;
+    for(let i=0;i<230;i++) stars.push({x:rand()*W,y:rand()*H,r:range(1,2.5),ph:rand()*6.28,spd:range(1,4)});
   }
-  const stars=[];
-  for(let i=0;i<230;i++) stars.push({x:rand()*W,y:rand()*H,r:range(1,2.5),ph:rand()*6.28,spd:range(1,4)});
+  rebuildScenery();
+  window.addEventListener('resize', () => {
+    resizeCanvas();
+    rebuildScenery();
+  });
   const ringAngles=Array.from({length:500},()=>rand()*Math.PI*2);
   const littleRings=Array.from({length:6},()=>Array.from({length:110},()=>rand()*Math.PI*2));
   const floating=Array.from({length:90},()=>({off:rand(),ph:rand()*6.28,dr:range(-40,40),sp:range(.05,.12)}));
@@ -156,9 +188,11 @@
       }
     }
     // A subtle glow pass
+    ctx.save();
+    ctx.setTransform(1,0,0,1,0,0);
     ctx.globalAlpha=.13;ctx.globalCompositeOperation='lighter';
-    ctx.filter='blur(7px)';ctx.drawImage(canvas,0,0);ctx.filter='none';
-    ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+    ctx.filter='blur(7px)';ctx.drawImage(canvas,0,0);
+    ctx.restore();
   }
   function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;time+=dt;render(time);requestAnimationFrame(frame);}
   const intro=document.getElementById('intro');
